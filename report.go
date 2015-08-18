@@ -75,7 +75,7 @@ func sendJSON(data []byte, requestUrl string) string {
     client := &http.Client{}
     resp, err := client.Do(req)
     if err != nil {
-    	return "ok"
+    	return ""
     }
     defer resp.Body.Close()
 
