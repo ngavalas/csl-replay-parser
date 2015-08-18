@@ -1,0 +1,8 @@
+{
+	"ReplaysFolder": "replays/",
+	"MaxQueueSize": 100,
+	"DebugMode": true,
+	"DeleteOldFiles": false,
+	"MaxTries": 3,
+	"RequestUrl": "http://localhost"
+}
