@@ -5,16 +5,16 @@ import (
 	"fmt"
 	"os"
 
-	"net/http"
 	"encoding/json"
 	"io/ioutil"
+	"net/http"
 )
 
 type ExportedStats struct {
 	Teams    map[string][]*PlayerStats `json:"teams"`
-	Duration float64 `json:"duration_in_minutes"`
-	Winner   string  `json:"winner"`
-	MatchId  uint32  `json:"match_id"`
+	Duration float64                   `json:"duration_in_minutes"`
+	Winner   string                    `json:"winner"`
+	MatchId  uint32                    `json:"match_id"`
 }
 
 func ReportAndClean(finishedQueue <-chan *FileFinished, conf *Config) {
@@ -26,6 +26,8 @@ func ReportAndClean(finishedQueue <-chan *FileFinished, conf *Config) {
 		if err != nil {
 			fmt.Println(err)
 		}
+
+		DebugPrint(string(out))
 
 		resp := ""
 		tries := 0
@@ -47,7 +49,7 @@ func ReportAndClean(finishedQueue <-chan *FileFinished, conf *Config) {
 
 func exportMatchStats(stats *MatchStats) *ExportedStats {
 	radiant := make([]*PlayerStats, 0, 5)
-	dire    := make([]*PlayerStats, 0, 5)
+	dire := make([]*PlayerStats, 0, 5)
 
 	for _, player := range stats.Players {
 		if player.Slot < 4 {
@@ -57,29 +59,29 @@ func exportMatchStats(stats *MatchStats) *ExportedStats {
 		}
 	}
 
-	return &ExportedStats {
-		Teams: map[string][]*PlayerStats {
+	return &ExportedStats{
+		Teams: map[string][]*PlayerStats{
 			"radiant": radiant,
 			"dire":    dire,
 		},
 		Duration: stats.Duration,
-		Winner: stats.Winner,
-		MatchId: stats.MatchId,
+		Winner:   stats.Winner,
+		MatchId:  stats.MatchId,
 	}
 }
 
 func sendJSON(data []byte, requestUrl string) string {
 	req, err := http.NewRequest("POST", requestUrl, bytes.NewBuffer(data))
-    req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", "application/json")
 
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    if err != nil {
-    	return ""
-    }
-    defer resp.Body.Close()
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
 
-    body, _ := ioutil.ReadAll(resp.Body)
+	body, _ := ioutil.ReadAll(resp.Body)
 
-    return string(body)
+	return string(body)
 }

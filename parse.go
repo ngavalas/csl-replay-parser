@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dotabuff/yasha"
-	"github.com/dotabuff/yasha/dota"
+	"github.com/dotabuff/manta"
+	"github.com/dotabuff/manta/dota"
 
 	"github.com/davecgh/go-spew/spew"
 )
@@ -14,11 +14,11 @@ type PlayerStats struct {
 	SteamId  uint64 `json:"steam_id"`
 	HeroName string `json:"raw_hero_name"`
 	Slot     uint   `json:"-"`
-	Kills    uint   `json:"kills"`
-	Deaths   uint   `json:"deaths"`
-	Assists	 uint   `json:"assist"`
-	Gold     uint   `json:"total_gold"`
-	Xp       uint   `json:"total_experience"`
+	Kills    int32  `json:"kills"`
+	Deaths   int32  `json:"deaths"`
+	Assists  int32  `json:"assist"`
+	Gold     int32  `json:"total_gold"`
+	Xp       int32  `json:"total_experience"`
 }
 
 type MatchStats struct {
@@ -30,6 +30,10 @@ type MatchStats struct {
 
 var pp = spew.Dump
 
+func ignoreError(v int32, e bool) int32 {
+	return v
+}
+
 func Parse(parseQueue <-chan *FilePending, finishedQueue chan<- *FileFinished) {
 	for {
 		file := <-parseQueue
@@ -38,40 +42,40 @@ func Parse(parseQueue <-chan *FilePending, finishedQueue chan<- *FileFinished) {
 		match := &MatchStats{}
 		match.Players = make(map[uint64]*PlayerStats)
 
-		parser := yasha.ParserFromFile(file.Path)
+		parser, _ := manta.NewParserFromFile(file.Path)
 
 		parsed := false
 
 		var totalTime time.Duration
-		var gameEndTime, gameStartTime float64
+		var gameEndTime, gameStartTime float32
 
-		parser.OnEntityPreserved = func(e *yasha.PacketEntity) {
+		parser.OnPacketEntity(func(e *manta.PacketEntity, pet manta.EntityEventType) error {
 			// once we get the data once, it won't change, so we can skip it after one load
 			if parsed {
-				return
+				return nil
 			}
 
-			if e.Name == "DT_DOTAGamerulesProxy" {
-				gameEndTime = e.Values["DT_DOTAGamerules.m_flGameEndTime"].(float64)
-				gameStartTime = e.Values["DT_DOTAGamerules.m_flGameStartTime"].(float64)
+			if e.ClassName == "CDOTAGamerulesProxy" {
+				gameEndTime, _ = e.FetchFloat32("CDOTAGamerules.m_flGameEndTime")
+				gameStartTime, _ = e.FetchFloat32("CDOTAGamerules.m_flGameStartTime")
 				totalTime = time.Duration(gameEndTime-gameStartTime) * time.Second
 			}
 
 			// the ancient has fallen, gather final stats
 			if gameEndTime > 0 {
-				if e.Name == "DT_DOTA_PlayerResource" {
+				if e.ClassName == "CDOTA_PlayerResource" {
 					for i := 0; i < 10; i++ {
 						suffix := fmt.Sprintf("%04d", i)
-						id := e.Values["m_iPlayerSteamIDs."+suffix].(uint64)
+						id, _ := e.FetchUint64("m_iPlayerSteamIDs." + suffix)
 
 						match.Players[id] = &PlayerStats{
-							SteamId:  id,
-							Slot:     uint(i),
-							Kills:    e.Values["m_iKills."+suffix].(uint),
-							Deaths:   e.Values["m_iDeaths."+suffix].(uint),
-							Assists:  e.Values["m_iAssists."+suffix].(uint),
-							Gold:     e.Values["m_iTotalEarnedGold."+suffix].(uint),
-							Xp:       e.Values["m_iTotalEarnedXP."+suffix].(uint),
+							SteamId: id,
+							Slot:    uint(i),
+							Kills:   ignoreError(e.FetchInt32("m_iKills." + suffix)),
+							Deaths:  ignoreError(e.FetchInt32("m_iDeaths." + suffix)),
+							Assists: ignoreError(e.FetchInt32("m_iAssists." + suffix)),
+							Gold:    ignoreError(e.FetchInt32("m_iTotalEarnedGold." + suffix)),
+							Xp:      ignoreError(e.FetchInt32("m_iTotalEarnedXP." + suffix)),
 						}
 					}
 
@@ -79,9 +83,11 @@ func Parse(parseQueue <-chan *FilePending, finishedQueue chan<- *FileFinished) {
 					parsed = true
 				}
 			}
-		}
 
-		parser.OnFileInfo = func(fileinfo *dota.CDemoFileInfo) {
+			return nil
+		})
+
+		parser.Callbacks.OnCDemoFileInfo(func(fileinfo *dota.CDemoFileInfo) error {
 			gameInfo := fileinfo.GetGameInfo().GetDota()
 
 			match.MatchId = gameInfo.GetMatchId()
@@ -96,9 +102,11 @@ func Parse(parseQueue <-chan *FilePending, finishedQueue chan<- *FileFinished) {
 			for _, pls := range gameInfo.GetPlayerInfo() {
 				match.Players[pls.GetSteamid()].HeroName = pls.GetHeroName()
 			}
-		}
 
-		parser.Parse()
+			return nil
+		})
+
+		_ = parser.Start()
 
 		//spew.Dump(match)
 		DebugPrint("done parsing: %s\n", file.Name)
